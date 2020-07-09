@@ -21,6 +21,8 @@
 
 package com.zynaptic.aws.api.key.manager;
 
+import java.util.Map;
+
 import com.amazonaws.regions.Regions;
 
 /**
@@ -33,17 +35,17 @@ import com.amazonaws.regions.Regions;
 final class ApiConfiguration {
 
   /**
-   * This is a compile time configurable option that specifies the path to the API
-   * key creation resource on the API endpoint.
+   * This is a default option that specifies the path to the API key creation
+   * resource on the API endpoint.
    */
-  private static final String RESOURCE_KEY_CREATE_PATH = "/ApiKeyManager";
+  private static final String AWS_API_RESOURCE_KEY_CREATE_PATH = "/ApiKeyManager";
 
   /**
-   * This is a compile time configurable option that specifies the access path to
-   * individual API key resources on the API endpoint. The {apiKey} path element
-   * is parameterised using the public facing API key identifier.
+   * This is a default option that specifies the access path to individual API key
+   * resources on the API endpoint. The {apiKey} path element is parameterised
+   * using the public facing API key identifier.
    */
-  private static final String RESOURCE_KEY_ACCESS_PATH = "/ApiKeyManager/{apiKey}";
+  private static final String AWS_API_RESOURCE_KEY_ACCESS_PATH = "/ApiKeyManager/{apiKey}";
 
   /**
    * This is a compile time configurable option that specifies the CORS origin
@@ -52,10 +54,10 @@ final class ApiConfiguration {
   private static final String CORS_ORIGIN_DOMAIN = "*";
 
   /**
-   * This is a compile time configurable option that specifies the AWS region in
-   * which the various required AWS infrastructure components are hosted.
+   * This is a default option that specifies the AWS region in which the various
+   * required AWS infrastructure components are hosted.
    */
-  private static final Regions AWS_HOST_REGION = Regions.EU_WEST_1;
+  private static final Regions AWS_DEFAULT_HOST_REGION = Regions.EU_WEST_1;
 
   /**
    * This is a compile time configurable option that specifies the custom header
@@ -73,9 +75,9 @@ final class ApiConfiguration {
   private static final int AWS_API_KEY_SIZE = 30;
 
   /**
-   * This is a compile time configurable option that specifies the name of the
-   * DynamoDB table that is used for holding the API key table. The table is used
-   * to map API keys onto API capabilities.
+   * This is a default option that specifies the name of the DynamoDB table that
+   * is used for holding the API key table. The table is used to map API keys onto
+   * API capabilities.
    */
   private static final String AWS_API_KEY_TABLE_NAME = "ApiKeyTable";
 
@@ -99,6 +101,48 @@ final class ApiConfiguration {
    */
   private static final String AWS_API_KEY_DELETE_CAPABILITY_NAME = "com.zynaptic.aws.api.key.delete";
 
+  // Specify the configuration options loaded from the execution environment.
+  private final Regions awsHostRegion;
+  private final String awsApiKeyTableName;
+  private final String resourceCreatePath;
+  private final String resourceAccessPath;
+
+  /**
+   * The standard constructor is used to map execution environment variables to
+   * configuration options.
+   */
+  ApiConfiguration() {
+    Map<String, String> env = System.getenv();
+
+    // Use the AWS region reported by the environment.
+    if (env.containsKey("AWS_REGION")) {
+      awsHostRegion = Regions.fromName(env.get("AWS_REGION"));
+    } else {
+      awsHostRegion = AWS_DEFAULT_HOST_REGION;
+    }
+
+    // Use the DynamoDB table name generated during deployment.
+    if (env.containsKey("AWS_API_KEY_TABLE_NAME")) {
+      awsApiKeyTableName = env.get("AWS_API_KEY_TABLE_NAME");
+    } else {
+      awsApiKeyTableName = AWS_API_KEY_TABLE_NAME;
+    }
+
+    // Use a custom key creation resource path if requested.
+    if (env.containsKey("AWS_API_RESOURCE_KEY_CREATE_PATH")) {
+      resourceCreatePath = env.get("AWS_API_RESOURCE_KEY_CREATE_PATH");
+    } else {
+      resourceCreatePath = AWS_API_RESOURCE_KEY_CREATE_PATH;
+    }
+
+    // Use a custom key access resource path if requested.
+    if (env.containsKey("AWS_API_RESOURCE_KEY_ACCESS_PATH")) {
+      resourceAccessPath = env.get("AWS_API_RESOURCE_KEY_ACCESS_PATH");
+    } else {
+      resourceAccessPath = AWS_API_RESOURCE_KEY_ACCESS_PATH;
+    }
+  }
+
   /**
    * Accesses the resource path which corresponds to the API key creation
    * endpoint.
@@ -106,7 +150,7 @@ final class ApiConfiguration {
    * @return Returns the configured API key creation resource path.
    */
   String getResourceCreatePath() {
-    return RESOURCE_KEY_CREATE_PATH;
+    return resourceCreatePath;
   }
 
   /**
@@ -116,7 +160,7 @@ final class ApiConfiguration {
    * @return Returns the configured API key access resource path.
    */
   String getResourceAccessPath() {
-    return RESOURCE_KEY_ACCESS_PATH;
+    return resourceAccessPath;
   }
 
   /**
@@ -137,7 +181,7 @@ final class ApiConfiguration {
    *   components.
    */
   Regions getAwsHostRegion() {
-    return AWS_HOST_REGION;
+    return awsHostRegion;
   }
 
   /**
@@ -167,7 +211,7 @@ final class ApiConfiguration {
    * @return Returns the name of the API key table.
    */
   String getAwsApiKeyTableName() {
-    return AWS_API_KEY_TABLE_NAME;
+    return awsApiKeyTableName;
   }
 
   /**
