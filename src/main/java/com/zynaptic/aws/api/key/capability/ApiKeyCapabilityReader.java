@@ -21,7 +21,9 @@
 
 package com.zynaptic.aws.api.key.capability;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -167,14 +169,22 @@ public class ApiKeyCapabilityReader {
         // Read the expiry timestamp. Throws exception if invalid.
         long expiryTimestamp = Long.parseLong(attributeMap.get("expiryTimestamp").getN());
 
-        // Read the authority key. Return null reference if invalid.
-        String authorityKey = attributeMap.get("authorityKey").getS();
-        if (authorityKey == null) {
+        // Read the authority keys. Return null reference if invalid.
+        List<AttributeValue> authorityKeyAttrs = attributeMap.get("authorityKeys").getL();
+        if (authorityKeyAttrs == null) {
           return null;
+        }
+        List<String> authorityKeys = new ArrayList<String>(authorityKeyAttrs.size());
+        for (AttributeValue authorityKeyAttr : authorityKeyAttrs) {
+          String authorityKey = authorityKeyAttr.getS();
+          if (authorityKey == null) {
+            return null;
+          }
+          authorityKeys.add(authorityKey);
         }
 
         // Parse the nested capabilities. Throws exception if invalid.
-        ApiKeyCapabilitySet capabilitySet = new ApiKeyCapabilitySet(apiKey, authorityKey, expiryTimestamp);
+        ApiKeyCapabilitySet capabilitySet = new ApiKeyCapabilitySet(apiKey, authorityKeys, expiryTimestamp);
         Map<String, AttributeValue> capabilityMap = attributeMap.get("capabilitySet").getM();
         for (Map.Entry<String, AttributeValue> capabilityMapEntry : capabilityMap.entrySet()) {
           ApiKeyCapabilityParser capabilityParser = capabilityParsers.get(capabilityMapEntry.getKey());

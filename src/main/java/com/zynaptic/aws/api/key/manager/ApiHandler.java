@@ -32,7 +32,9 @@ import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
 
@@ -299,8 +301,14 @@ public class ApiHandler implements RequestStreamHandler {
           "Invalid API key lifetime value in POST request data body", outputStream);
       return;
     }
-    ApiKeyCapabilitySet newCapabilitySet = new ApiKeyCapabilitySet(apiKeyFactory.createApiKey(),
-        apiAuthKeyCapabilitySet.getApiKey(), expiryTimestamp);
+
+    // Create the authority key list by appending the authority key to its own
+    // authority key list.
+    List<String> authorityKeys = new ArrayList<String>(apiAuthKeyCapabilitySet.getAuthorityKeys().size() + 1);
+    authorityKeys.addAll(apiAuthKeyCapabilitySet.getAuthorityKeys());
+    authorityKeys.add(apiAuthKeyCapabilitySet.getApiKey());
+    ApiKeyCapabilitySet newCapabilitySet = new ApiKeyCapabilitySet(apiKeyFactory.createApiKey(), authorityKeys,
+        expiryTimestamp);
 
     // Insert the requested capabilities into the new capability set. This can only
     // be done if the authorisation key also has the requested capabilities in its
@@ -426,6 +434,9 @@ public class ApiHandler implements RequestStreamHandler {
    */
   private void processDeleteRequest(ApiKeyCapabilitySet apiAuthKeyCapabilitySet, String apiAccessKey,
       String authorisedMethods, OutputStream outputStream) {
+
+    // TODO: If a key has the create capability we should do a full scan of the key
+    // database and also delete any other keys that have it in their authority list.
 
     // Issue a delete request for the DynamoDB table entry.
     try {

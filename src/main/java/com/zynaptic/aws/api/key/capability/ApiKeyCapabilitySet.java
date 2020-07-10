@@ -23,6 +23,7 @@ package com.zynaptic.aws.api.key.capability;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -35,7 +36,7 @@ public class ApiKeyCapabilitySet {
 
   // Specify the capability set internal parameters.
   private final String apiKey;
-  private final String authorityKey;
+  private final List<String> authorityKeys;
   private final long expiryTimestamp;
   private final Map<String, ApiKeyCapability> capabilityMap;
 
@@ -45,14 +46,14 @@ public class ApiKeyCapabilitySet {
    * 
    * @param apiKey This is the API key that is associated with the API key
    *   capability set.
-   * @param authorityKey This is the API authority key that was originally used to
-   *   create the API key and capability set.
+   * @param authorityKey This is the chain of API authority keys that were
+   *   originally used to create the API key and capability set.
    * @param expiryTimestamp This is the API key expiry time, expressed as an
    *   integer number of milliseconds since the UNIX epoch.
    */
-  public ApiKeyCapabilitySet(String apiKey, String authorityKey, long expiryTimestamp) {
+  public ApiKeyCapabilitySet(String apiKey, List<String> authorityKeys, long expiryTimestamp) {
     this.apiKey = apiKey;
-    this.authorityKey = authorityKey;
+    this.authorityKeys = authorityKeys;
     this.expiryTimestamp = expiryTimestamp;
     this.capabilityMap = new HashMap<String, ApiKeyCapability>();
   }
@@ -79,13 +80,13 @@ public class ApiKeyCapabilitySet {
   }
 
   /**
-   * Accesses the API authority key that was originally used to create the API key
-   * and capability set.
+   * Accesses the chain of API authority keys that were originally used to create
+   * the API key and capability set.
    * 
-   * @return Returns the authority key for the API key capability set.
+   * @return Returns the chain of authority keys for the API key capability set.
    */
-  public String getAuthorityKey() {
-    return authorityKey;
+  public List<String> getAuthorityKeys() {
+    return authorityKeys;
   }
 
   /**

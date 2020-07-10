@@ -21,7 +21,9 @@
 
 package com.zynaptic.aws.api.key.capability;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -70,9 +72,16 @@ public class ApiKeyCapabilityWriter {
     // operation.
     Map<String, AttributeValue> writeAttributes = new HashMap<String, AttributeValue>();
     writeAttributes.put("apiKey", new AttributeValue(apiKeyCapabilitySet.getApiKey()));
-    writeAttributes.put("authorityKey", new AttributeValue(apiKeyCapabilitySet.getAuthorityKey()));
     writeAttributes.put("expiryTimestamp",
         new AttributeValue().withN(Long.toString(apiKeyCapabilitySet.getExpiryTimestamp())));
+
+    // Add the list of authority keys.
+    List<String> authorityKeys = apiKeyCapabilitySet.getAuthorityKeys();
+    List<AttributeValue> authorityKeyAttrs = new ArrayList<AttributeValue>(authorityKeys.size());
+    for (String authorityKey : authorityKeys) {
+      authorityKeyAttrs.add(new AttributeValue(authorityKey));
+    }
+    writeAttributes.put("authorityKeys", new AttributeValue().withL(authorityKeyAttrs));
 
     // Add the capability set to the DynamoDB write attributes.
     Map<String, AttributeValue> capabilities = new HashMap<String, AttributeValue>();
