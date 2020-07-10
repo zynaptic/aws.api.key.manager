@@ -31,7 +31,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 /**
  * This class provides a basic implementation of the API key capability
  * interface. This supports arbitrary capability data structures with text
- * string, boolean value or integer value fields.
+ * string, boolean value or double precision numeric value fields.
  * 
  * @author Chris Holgate
  */
@@ -83,7 +83,7 @@ public class ApiKeyBasicCapability implements ApiKeyCapability {
       String dataItemKey = capabilityDataItem.getKey();
       Object dataItemValue = capabilityDataItem.getValue();
       if ((dataItemValue instanceof String) || (dataItemValue instanceof Boolean)
-          || (dataItemValue instanceof Integer)) {
+          || (dataItemValue instanceof Number)) {
         capabilityDataMap.put(dataItemKey, dataItemValue);
       }
     }
@@ -108,8 +108,8 @@ public class ApiKeyBasicCapability implements ApiKeyCapability {
         attrDataItems.put(dataItem.getKey(), new AttributeValue((String) dataItem.getValue()));
       } else if (dataItem.getValue() instanceof Boolean) {
         attrDataItems.put(dataItem.getKey(), new AttributeValue().withBOOL((Boolean) dataItem.getValue()));
-      } else if (dataItem.getValue() instanceof Integer) {
-        attrDataItems.put(dataItem.getKey(), new AttributeValue().withN(((Integer) dataItem.getValue()).toString()));
+      } else if (dataItem.getValue() instanceof Number) {
+        attrDataItems.put(dataItem.getKey(), new AttributeValue().withN(((Number) dataItem.getValue()).toString()));
       }
     }
     return new AttributeValue().withM(attrDataItems);
@@ -129,8 +129,8 @@ public class ApiKeyBasicCapability implements ApiKeyCapability {
         capabilityDataNode.set(dataItemName, nodeFactory.textNode((String) dataItemValue));
       } else if (dataItemValue instanceof Boolean) {
         capabilityDataNode.set(dataItemName, nodeFactory.booleanNode((Boolean) dataItemValue));
-      } else if (dataItemValue instanceof Integer) {
-        capabilityDataNode.set(dataItemName, nodeFactory.numberNode((Integer) dataItemValue));
+      } else if (dataItemValue instanceof Number) {
+        capabilityDataNode.set(dataItemName, nodeFactory.numberNode(((Number) dataItemValue).doubleValue()));
       }
     }
     return capabilityDataNode;
@@ -176,20 +176,20 @@ public class ApiKeyBasicCapability implements ApiKeyCapability {
 
   /**
    * Accesses the capability data item associated with the specified data key
-   * after first checking that it is an integer data item.
+   * after first checking that it is a double precision numeric data item.
    * 
    * @param dataKey This is the data item key which is used to identify the
    *   capability data item being accessed.
-   * @return Returns an integer value containing the data item that is associated
-   *   with the data key, or a null reference if the data key does not correspond
-   *   to a valid integer data item.
+   * @return Returns a double precision numeric value containing the data item
+   *   that is associated with the data key, or a null reference if the data key
+   *   does not correspond to a valid numeric data item.
    */
-  public Integer getIntegerData(String dataKey) {
-    Object integerNode = capabilityDataMap.get(dataKey);
-    if ((integerNode == null) || !(integerNode instanceof Integer)) {
+  public Double getNumericData(String dataKey) {
+    Object numberNode = capabilityDataMap.get(dataKey);
+    if ((numberNode == null) || !(numberNode instanceof Number)) {
       return null;
     } else {
-      return (Integer) integerNode;
+      return ((Number) numberNode).doubleValue();
     }
   }
 }

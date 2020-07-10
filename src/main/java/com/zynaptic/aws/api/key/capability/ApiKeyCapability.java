@@ -59,7 +59,7 @@ public interface ApiKeyCapability {
    * 
    * @param capabilityData This is the new capability data that is to be merged
    *   with the existing capability data. This should be a map of data element
-   *   names to data values of String, Boolean or Integer type.
+   *   names to data values of String, Boolean or Number type.
    */
   public void addCapabilityData(Map<String, Object> capabilityData);
 
