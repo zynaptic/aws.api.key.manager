@@ -302,13 +302,20 @@ public class ApiHandler implements RequestStreamHandler {
       return;
     }
 
+    // Extract the key description string if present.
+    String description = null;
+    JsonNode descriptionNode = commandNode.get("description");
+    if (descriptionNode != null) {
+      description = descriptionNode.asText();
+    }
+
     // Create the authority key list by appending the authority key to its own
     // authority key list.
     List<String> authorityKeys = new ArrayList<String>(apiAuthKeyCapabilitySet.getAuthorityKeys().size() + 1);
     authorityKeys.addAll(apiAuthKeyCapabilitySet.getAuthorityKeys());
     authorityKeys.add(apiAuthKeyCapabilitySet.getApiKey());
     ApiKeyCapabilitySet newCapabilitySet = new ApiKeyCapabilitySet(apiKeyFactory.createApiKey(), authorityKeys,
-        expiryTimestamp);
+        expiryTimestamp, description);
 
     // Insert the requested capabilities into the new capability set. This can only
     // be done if the authorisation key also has the requested capabilities in its
@@ -400,6 +407,11 @@ public class ApiHandler implements RequestStreamHandler {
     JsonNodeFactory nodeFactory = JsonNodeFactory.instance;
     ObjectNode responseNode = nodeFactory.objectNode();
     responseNode.put("expiryDate", expiryDate);
+
+    // Include the text description if required.
+    if (apiReadKeyCapabilitySet.getDescription() != null) {
+      responseNode.put("description", apiReadKeyCapabilitySet.getDescription());
+    }
 
     // Format the capability set for the response message. Note that only those
     // capabilities that are also present in the authorisation capability set will

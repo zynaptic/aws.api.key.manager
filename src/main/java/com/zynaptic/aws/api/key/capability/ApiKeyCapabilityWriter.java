@@ -74,6 +74,9 @@ public class ApiKeyCapabilityWriter {
     writeAttributes.put("apiKey", new AttributeValue(apiKeyCapabilitySet.getApiKey()));
     writeAttributes.put("expiryTimestamp",
         new AttributeValue().withN(Long.toString(apiKeyCapabilitySet.getExpiryTimestamp())));
+    if (apiKeyCapabilitySet.getDescription() != null) {
+      writeAttributes.put("description", new AttributeValue(apiKeyCapabilitySet.getDescription()));
+    }
 
     // Add the list of authority keys.
     List<String> authorityKeys = apiKeyCapabilitySet.getAuthorityKeys();

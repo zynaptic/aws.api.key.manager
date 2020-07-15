@@ -169,6 +169,13 @@ public class ApiKeyCapabilityReader {
         // Read the expiry timestamp. Throws exception if invalid.
         long expiryTimestamp = Long.parseLong(attributeMap.get("expiryTimestamp").getN());
 
+        // Read the description string if present.
+        String description = null;
+        AttributeValue descriptionAttr = attributeMap.get("description");
+        if (descriptionAttr != null) {
+          description = descriptionAttr.getS();
+        }
+
         // Read the authority keys. Return null reference if invalid.
         List<AttributeValue> authorityKeyAttrs = attributeMap.get("authorityKeys").getL();
         if (authorityKeyAttrs == null) {
@@ -184,7 +191,8 @@ public class ApiKeyCapabilityReader {
         }
 
         // Parse the nested capabilities. Throws exception if invalid.
-        ApiKeyCapabilitySet capabilitySet = new ApiKeyCapabilitySet(apiKey, authorityKeys, expiryTimestamp);
+        ApiKeyCapabilitySet capabilitySet = new ApiKeyCapabilitySet(apiKey, authorityKeys, expiryTimestamp,
+            description);
         Map<String, AttributeValue> capabilityMap = attributeMap.get("capabilitySet").getM();
         for (Map.Entry<String, AttributeValue> capabilityMapEntry : capabilityMap.entrySet()) {
           ApiKeyCapabilityParser capabilityParser = capabilityParsers.get(capabilityMapEntry.getKey());

@@ -38,6 +38,7 @@ public class ApiKeyCapabilitySet {
   private final String apiKey;
   private final List<String> authorityKeys;
   private final long expiryTimestamp;
+  private final String description;
   private final Map<String, ApiKeyCapability> capabilityMap;
 
   /**
@@ -50,11 +51,14 @@ public class ApiKeyCapabilitySet {
    *   originally used to create the API key and capability set.
    * @param expiryTimestamp This is the API key expiry time, expressed as an
    *   integer number of milliseconds since the UNIX epoch.
+   * @param description This is an optional text string which may be used to
+   *   describe the intended use of the API key.
    */
-  public ApiKeyCapabilitySet(String apiKey, List<String> authorityKeys, long expiryTimestamp) {
+  public ApiKeyCapabilitySet(String apiKey, List<String> authorityKeys, long expiryTimestamp, String description) {
     this.apiKey = apiKey;
     this.authorityKeys = authorityKeys;
     this.expiryTimestamp = expiryTimestamp;
+    this.description = description;
     this.capabilityMap = new HashMap<String, ApiKeyCapability>();
   }
 
@@ -96,6 +100,16 @@ public class ApiKeyCapabilitySet {
    */
   public long getExpiryTimestamp() {
     return expiryTimestamp;
+  }
+
+  /**
+   * Accesses the description string associated with the API key capability set.
+   *
+   * @return Returns a text description of the API key capability set or a null
+   *   reference if not defined.
+   */
+  public String getDescription() {
+    return description;
   }
 
   /**
