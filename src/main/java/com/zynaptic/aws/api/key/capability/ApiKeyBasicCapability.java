@@ -78,13 +78,15 @@ public class ApiKeyBasicCapability implements ApiKeyCapability {
    * Modifies the capability using the supplied capability data.
    */
   @Override
-  public void addCapabilityData(Map<String, Object> capabilityData) {
+  public void addCapabilityData(Map<String, Object> capabilityData, boolean overwrite) {
     for (Map.Entry<String, Object> capabilityDataItem : capabilityData.entrySet()) {
       String dataItemKey = capabilityDataItem.getKey();
       Object dataItemValue = capabilityDataItem.getValue();
-      if ((dataItemValue instanceof String) || (dataItemValue instanceof Boolean)
-          || (dataItemValue instanceof Number)) {
-        capabilityDataMap.put(dataItemKey, dataItemValue);
+      if (overwrite || !capabilityDataMap.containsKey(dataItemKey)) {
+        if ((dataItemValue instanceof String) || (dataItemValue instanceof Boolean)
+            || (dataItemValue instanceof Number)) {
+          capabilityDataMap.put(dataItemKey, dataItemValue);
+        }
       }
     }
   }

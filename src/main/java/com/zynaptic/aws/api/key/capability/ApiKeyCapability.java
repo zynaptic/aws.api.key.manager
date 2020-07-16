@@ -55,13 +55,16 @@ public interface ApiKeyCapability {
    * Modifies the key capability by merging in additional capability data. The
    * exact process will depend on the capability implementation, but generally the
    * data already held by the key will be overwritten by the merged capability
-   * data.
+   * data if the overwrite flag is set. Otherwise the existing data is preserved.
    * 
    * @param capabilityData This is the new capability data that is to be merged
    *   with the existing capability data. This should be a map of data element
    *   names to data values of String, Boolean or Number type.
+   * @param overwrite This is a boolean flag which when set to true indicates that
+   *   the stored capability data should be overwritten by the new capability data
+   *   where appropriate.
    */
-  public void addCapabilityData(Map<String, Object> capabilityData);
+  public void addCapabilityData(Map<String, Object> capabilityData, boolean overwrite);
 
   /**
    * Accesses the data elements associated with the capability as a set of native

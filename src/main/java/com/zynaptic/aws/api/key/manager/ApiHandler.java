@@ -48,9 +48,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.zynaptic.aws.api.key.capability.ApiKeyBasicCapability;
 import com.zynaptic.aws.api.key.capability.ApiKeyBasicCapabilityParser;
 import com.zynaptic.aws.api.key.capability.ApiKeyCapability;
 import com.zynaptic.aws.api.key.capability.ApiKeyCapabilityDeleter;
+import com.zynaptic.aws.api.key.capability.ApiKeyCapabilityParser;
 import com.zynaptic.aws.api.key.capability.ApiKeyCapabilityReader;
 import com.zynaptic.aws.api.key.capability.ApiKeyCapabilitySet;
 import com.zynaptic.aws.api.key.capability.ApiKeyCapabilityWriter;
@@ -68,6 +70,7 @@ public class ApiHandler implements RequestStreamHandler {
   private final ApiKeyCapabilityReader apiKeyCapabilityReader;
   private final ApiKeyCapabilityWriter apiKeyCapabilityWriter;
   private final ApiKeyCapabilityDeleter apiKeyCapabilityDeleter;
+  private final ApiKeyCapabilityParser defaultCapabilityParser;
 
   /**
    * Constructs a new API handler instance on an AWS Lambda function cold start.
@@ -80,14 +83,17 @@ public class ApiHandler implements RequestStreamHandler {
     apiKeyCapabilityReader = new ApiKeyCapabilityReader(dynamoDB, apiConfiguration.getAwsApiKeyTableName());
     apiKeyCapabilityWriter = new ApiKeyCapabilityWriter(dynamoDB, apiConfiguration.getAwsApiKeyTableName());
     apiKeyCapabilityDeleter = new ApiKeyCapabilityDeleter(dynamoDB, apiConfiguration.getAwsApiKeyTableName());
+    defaultCapabilityParser = new ApiKeyBasicCapabilityParser("DEFAULT");
 
-    // Use a basic API key capability parser to wrap the read and write
+    // Use a basic API key capability parser to wrap the read, write and delete
     // capabilities.
     apiKeyCapabilityReader
         .addCapabilityParser(new ApiKeyBasicCapabilityParser(apiConfiguration.getAwsApiKeyReadCapabilityName()));
     apiKeyCapabilityReader
         .addCapabilityParser(new ApiKeyBasicCapabilityParser(apiConfiguration.getAwsApiKeyCreateCapabilityName()));
-    apiKeyCapabilityReader.setDefaultCapabilityParser(new ApiKeyBasicCapabilityParser("DEFAULT"));
+    apiKeyCapabilityReader
+        .addCapabilityParser(new ApiKeyBasicCapabilityParser(apiConfiguration.getAwsApiKeyDeleteCapabilityName()));
+    apiKeyCapabilityReader.setDefaultCapabilityParser(defaultCapabilityParser);
   }
 
   /**
@@ -260,6 +266,15 @@ public class ApiHandler implements RequestStreamHandler {
   private void processCreateRequest(JsonNode jsonRequest, ApiKeyCapabilitySet apiAuthKeyCapabilitySet,
       OutputStream outputStream) {
 
+    // Get the capability lock flag to determine whether the create request is
+    // allowed to create new capabilities.
+    ApiKeyBasicCapability capability = (ApiKeyBasicCapability) apiAuthKeyCapabilitySet
+        .getCapability(apiConfiguration.getAwsApiKeyCreateCapabilityName());
+    Boolean capabilityLock = capability.getBooleanData("capabilityLock");
+    if (capabilityLock == null) {
+      capabilityLock = false;
+    }
+
     // Extract the request body. This includes exception handling for invalid JSON
     // in the request body.
     JsonNode commandNode;
@@ -337,13 +352,21 @@ public class ApiHandler implements RequestStreamHandler {
         return;
       }
 
-      // Any capability data held by the authorisation capability will overwrite
-      // capability data in the request.
+      // If the capability lock is in effect, any capability data held by the
+      // authorisation capability will overwrite capability data in the request.
       ApiKeyCapability authCapability = apiAuthKeyCapabilitySet.getCapability(newCapabilityName);
       if (authCapability != null) {
         ApiKeyCapability newCapability = authCapability.getCapabilityParser().parseCapability(newCapabilityName,
             newCapabilityData);
-        newCapability.addCapabilityData(authCapability.getCapabilityData());
+        newCapability.addCapabilityData(authCapability.getCapabilityData(), capabilityLock);
+        newCapabilitySet.addCapability(newCapability);
+      }
+
+      // If the capability lock is not in effect, new capabilities can be added to the
+      // created key. New capabilities created in this manner will always be parsed
+      // using the default capability parser.
+      else if (!capabilityLock) {
+        ApiKeyCapability newCapability = defaultCapabilityParser.parseCapability(newCapabilityName, newCapabilityData);
         newCapabilitySet.addCapability(newCapability);
       }
     }
