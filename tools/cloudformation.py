@@ -203,7 +203,8 @@ def createGatewayResource(resourcePath):
 
 
 #
-# Creates the AWS API gateway template for REST API handling.
+# Creates the AWS API gateway template for REST API handling. This only
+# supports regional endpoint configurations.
 #
 def createApiKeyRestGateway(apiGatewayName, stagingName):
 
@@ -215,6 +216,7 @@ def createApiKeyRestGateway(apiGatewayName, stagingName):
             "Properties": {
                 "Name": apiGatewayName,
                 "Description": "API Key Management Service (" + stagingName + ")",
+                "EndpointConfiguration": {"Types": ["REGIONAL"]},
             },
         }
     }
@@ -355,6 +357,39 @@ def createApiGatewayDeployment(stagingName):
 
 
 #
+# Creates the API custom domain name configuration.
+#
+def createApiCustomDomain(domainName, deploymentStage):
+
+    # If staging is set to 'production' the standard base path is used.
+    # Otherwise the base path is made up of the standard base path plus
+    # the staging name.
+    if deploymentStage == "production":
+        basePath = configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH
+    else:
+        basePath = (
+            configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH + "." + deploymentStage
+        )
+
+    # Specifies the custom domain to be used and the way in which it is
+    # to be mapped to the API. This only supports regional endpoint
+    # configurations that have previously been set up.
+    customDomainDefinition = {
+        "ApiKeyRestGatewayMapping": {
+            "Type": "AWS::ApiGateway::BasePathMapping",
+            "DependsOn": "ApiKeyRestGatewayDeployment",
+            "Properties": {
+                "DomainName": domainName,
+                "BasePath": basePath,
+                "RestApiId": {"Ref": "ApiKeyRestGateway"},
+                "Stage": deploymentStage,
+            },
+        }
+    }
+    return customDomainDefinition
+
+
+#
 # Creates the complete CloudFormation template using the parameters
 # specified in the local configuration file.
 #
@@ -363,7 +398,8 @@ def createTemplate(
     deploymentBucket=configuration.AWS_S3_DEFAULT_DEPLOYMENT_BUCKET,
     packageName=configuration.AWS_LAMBDA_DEFAULT_PACKAGE_NAME,
     apiGatewayName="ApiKeyManager",
-    deploymentStage="beta",
+    deploymentStage="production",
+    domainName=None,
     doFormat=False,
 ):
     resources = {}
@@ -371,6 +407,13 @@ def createTemplate(
     resources.update(createApiKeyManagementLambda(deploymentBucket, packageName))
     resources.update(createApiKeyRestGateway(apiGatewayName, deploymentStage))
     resources.update(createApiGatewayDeployment(deploymentStage))
+
+    # Only add the domain name configuration if a custom domain name has
+    # been defined.
+    if domainName != None:
+        resources.update(createApiCustomDomain(domainName, deploymentStage))
+
+    # Convert Python template to JSON.
     templateData = {"Resources": resources}
     if doFormat:
         template = json.dumps(templateData, indent=4)

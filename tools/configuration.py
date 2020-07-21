@@ -62,14 +62,26 @@ AWS_LAMBDA_DEFAULT_PACKAGE_NAME = "aws-api-key-manager-1.0.0.jar"
 AWS_CLOUD_FORMATION_DEFAULT_STACK_NAME = "aws-api-key-manager"
 
 #
+# This options sets the default name of the AWS CloudFormation DNS
+# configuration stack.
+#
+AWS_CLOUD_FORMATION_DEFAULT_DNS_STACK_NAME = "aws-api-dns-configuration"
+
+#
+# Specify the base resource path to be used when accessing this service
+# via a custom domain.
+#
+RESOURCE_CUSTOM_DOMAIN_BASE_PATH = "ApiKeyManager"
+
+#
 # This option sets the resource path that is used for API key creation.
 #
-RESOURCE_KEY_CREATE_PATH = "/ApiKeyManager"
+RESOURCE_KEY_CREATE_PATH = "/Create"
 
 #
 # This option sets the resource path that is used for API key accesses.
 #
-RESOURCE_KEY_ACCESS_PATH = "/ApiKeyManager/{apiKey}"
+RESOURCE_KEY_ACCESS_PATH = "/Keys/{apiKey}"
 
 #
 # This option specifies the size of generated API keys as an integer

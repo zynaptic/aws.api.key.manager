@@ -85,8 +85,13 @@ def parseCommandLine():
     )
     parser.add_argument(
         "--deployment_stage",
-        default="beta",
+        default="production",
         help="the API deployment staging name to use",
+    )
+    parser.add_argument(
+        "--domain_name",
+        default=None,
+        help="the custom domain name to be used by the AWS API gateway",
     )
     args = parser.parse_args()
     return args
@@ -129,6 +134,35 @@ def checkDeploymentBucket(awsRegion, bucketName):
     with os.popen(createBucketCommand, "r") as f:
         status = json.loads(f.read())
     print("Created AWS S3 deployment bucket: %s" % status["Location"])
+
+
+#
+# Use the AWS command line tools to check that the specified domain name
+# is configured for use with the AWS API gateway.
+#
+def checkDnsRegistration(awsRegion, domainName):
+
+    # Read the list of domain names associated with the API gateway.
+    readDomainNameInfoCommand = (
+        "aws apigateway get-domain-names --region  " + awsRegion + " --no-paginate"
+    )
+    with os.popen(readDomainNameInfoCommand, "r") as f:
+        domainNameInfo = json.loads(f.read())
+
+    # Search for a matching domain name.
+    matchedDomain = None
+    for domainNameItem in domainNameInfo["items"]:
+        if domainNameItem["domainName"] == domainName:
+            matchedDomain = domainNameItem
+            break
+    assert matchedDomain != None, (
+        "Failed to find configured domain name for '" + domainName + "'"
+    )
+
+    # Check that the domain name is configured as a regional domain.
+    assert "regionalDomainName" in matchedDomain, (
+        "Matched domain name '" + domainName + "' is not a regional endpoint"
+    )
 
 
 #
@@ -267,6 +301,45 @@ def deriveApiBaseUrl(awsRegion, stackName, deploymentStage):
 
 
 #
+# Derives the public URL for the API when a custom domain is in use.
+#
+def derivePublicBaseUrl(domainName, deploymentStage):
+    if domainName == None:
+        return None
+    elif deploymentStage == "production":
+        return (
+            "https://"
+            + domainName
+            + "/"
+            + configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH
+        )
+    else:
+        return (
+            "https://"
+            + domainName
+            + "/"
+            + configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH
+            + "."
+            + deploymentStage
+        )
+
+
+#
+# Runs a test read on the root key URL.
+#
+def testReadRootKey(baseUrl, rootKey):
+    rootKeyUrl = baseUrl + configuration.RESOURCE_KEY_ACCESS_PATH
+    rootKeyUrl = rootKeyUrl.replace("{apiKey}", rootKey)
+    print("Reading key from " + rootKeyUrl)
+    curlCommand = (
+        "curl --no-progress-meter -H x-zynaptic-api-key:" + rootKey + " " + rootKeyUrl
+    )
+    with os.popen(curlCommand, "r") as f:
+        status = json.loads(f.read())
+    print(json.dumps(status, indent=4))
+
+
+#
 # Provide main entry point.
 #
 def main(params):
@@ -278,6 +351,8 @@ def main(params):
     # Perform pre-deployment checks.
     checkKeyDatabase(params.region, params.database_name)
     checkDeploymentBucket(params.region, params.deployment_bucket)
+    if params.domain_name != None:
+        checkDnsRegistration(params.region, params.domain_name)
 
     # Run the Maven build and then upload the deployment package. The
     # deployment package name is inferred by looking for the only .jar
@@ -306,6 +381,7 @@ def main(params):
         deploymentPackageName,
         params.api_gateway_name,
         params.deployment_stage,
+        params.domain_name,
         True,
     )
     print("Writing CloudFormation template to " + templateName)
@@ -344,25 +420,36 @@ def main(params):
     apiBaseUrl = deriveApiBaseUrl(
         params.region, params.stack_name, params.deployment_stage
     )
+    publicBaseUrl = derivePublicBaseUrl(params.domain_name, params.deployment_stage)
     print(
         "\n--------------------------------------------------------------------------------\n"
     )
-    print("API key create URI: " + apiBaseUrl + configuration.RESOURCE_KEY_CREATE_PATH)
-    print("API key access URI: " + apiBaseUrl + configuration.RESOURCE_KEY_ACCESS_PATH)
+    print(
+        "API key create URL    : " + apiBaseUrl + configuration.RESOURCE_KEY_CREATE_PATH
+    )
+    print(
+        "API key access URL    : " + apiBaseUrl + configuration.RESOURCE_KEY_ACCESS_PATH
+    )
+    if publicBaseUrl != None:
+        print(
+            "Public key create URL : "
+            + publicBaseUrl
+            + configuration.RESOURCE_KEY_CREATE_PATH
+        )
+        print(
+            "Public key access URL : "
+            + publicBaseUrl
+            + configuration.RESOURCE_KEY_ACCESS_PATH
+        )
+    print("\nAPI key management root key: " + rootKey)
     print(
         "\n--------------------------------------------------------------------------------\n"
     )
-    print("API key management root key: " + rootKey)
 
     # Test access to the API using CURL.
-    rootKeyUrl = apiBaseUrl + configuration.RESOURCE_KEY_ACCESS_PATH
-    rootKeyUrl = rootKeyUrl.replace("{apiKey}", rootKey)
-    curlCommand = (
-        "curl --no-progress-meter -H x-zynaptic-api-key:" + rootKey + " " + rootKeyUrl
-    )
-    with os.popen(curlCommand, "r") as f:
-        status = json.loads(f.read())
-    print("\nRoot key capability set:\n" + json.dumps(status, indent=4))
+    testReadRootKey(apiBaseUrl, rootKey)
+    if publicBaseUrl != None:
+        testReadRootKey(publicBaseUrl, rootKey)
     print(
         "\n--------------------------------------------------------------------------------"
     )
