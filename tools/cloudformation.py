@@ -361,16 +361,6 @@ def createApiGatewayDeployment(stagingName):
 #
 def createApiCustomDomain(domainName, deploymentStage):
 
-    # If staging is set to 'production' the standard base path is used.
-    # Otherwise the base path is made up of the standard base path plus
-    # the staging name.
-    if deploymentStage == "production":
-        basePath = configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH
-    else:
-        basePath = (
-            configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH + "." + deploymentStage
-        )
-
     # Specifies the custom domain to be used and the way in which it is
     # to be mapped to the API. This only supports regional endpoint
     # configurations that have previously been set up.
@@ -380,7 +370,7 @@ def createApiCustomDomain(domainName, deploymentStage):
             "DependsOn": "ApiKeyRestGatewayDeployment",
             "Properties": {
                 "DomainName": domainName,
-                "BasePath": basePath,
+                "BasePath": configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH,
                 "RestApiId": {"Ref": "ApiKeyRestGateway"},
                 "Stage": deploymentStage,
             },

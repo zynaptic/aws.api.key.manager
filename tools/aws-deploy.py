@@ -85,7 +85,7 @@ def parseCommandLine():
     )
     parser.add_argument(
         "--deployment_stage",
-        default="production",
+        default="testing",
         help="the API deployment staging name to use",
     )
     parser.add_argument(
@@ -103,7 +103,9 @@ def parseCommandLine():
 # key database is currently in use.
 #
 def checkKeyDatabase(awsRegion, databaseName):
-    with os.popen("aws dynamodb list-tables --region " + awsRegion, "r") as f:
+    with os.popen(
+        "aws dynamodb list-tables --region " + awsRegion + " --no-paginate", "r"
+    ) as f:
         tableList = json.loads(f.read())
     for tableName in tableList["TableNames"]:
         assert tableName != databaseName, (
@@ -117,7 +119,9 @@ def checkKeyDatabase(awsRegion, databaseName):
 # bucket is present and create it if required.
 #
 def checkDeploymentBucket(awsRegion, bucketName):
-    with os.popen("aws s3api list-buckets --region " + awsRegion, "r") as f:
+    with os.popen(
+        "aws s3api list-buckets --region " + awsRegion + " --no-paginate", "r"
+    ) as f:
         bucketList = json.loads(f.read())
     for bucketInfo in bucketList["Buckets"]:
         if bucketInfo["Name"] == bucketName:
@@ -303,24 +307,15 @@ def deriveApiBaseUrl(awsRegion, stackName, deploymentStage):
 #
 # Derives the public URL for the API when a custom domain is in use.
 #
-def derivePublicBaseUrl(domainName, deploymentStage):
+def derivePublicBaseUrl(domainName):
     if domainName == None:
         return None
-    elif deploymentStage == "production":
-        return (
-            "https://"
-            + domainName
-            + "/"
-            + configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH
-        )
     else:
         return (
             "https://"
             + domainName
             + "/"
             + configuration.RESOURCE_CUSTOM_DOMAIN_BASE_PATH
-            + "."
-            + deploymentStage
         )
 
 
@@ -348,11 +343,23 @@ def main(params):
     # directory.
     rootDir = Path(__file__).resolve().parent.parent
 
+    # Prepend deployment stage name to domain name for non-production
+    # deployments.
+    if params.deployment_stage == "production":
+        domainName = params.domain_name
+    elif params.domain_name != None:
+        domainName = params.deployment_stage + "." + params.domain_name
+    else:
+        domainName = None
+    stackName = params.stack_name + "-" + params.deployment_stage
+    databaseName = params.database_name + "-" + params.deployment_stage
+    apiGatewayName = params.api_gateway_name + "-" + params.deployment_stage
+
     # Perform pre-deployment checks.
-    checkKeyDatabase(params.region, params.database_name)
+    checkKeyDatabase(params.region, databaseName)
     checkDeploymentBucket(params.region, params.deployment_bucket)
-    if params.domain_name != None:
-        checkDnsRegistration(params.region, params.domain_name)
+    if domainName != None:
+        checkDnsRegistration(params.region, domainName)
 
     # Run the Maven build and then upload the deployment package. The
     # deployment package name is inferred by looking for the only .jar
@@ -374,15 +381,15 @@ def main(params):
 
     # Create the CloudFormation template and upload it to the deployment
     # bucket.
-    templateName = params.stack_name + "-template.json"
+    templateName = stackName + "-template.json"
     template = cloudformation.createTemplate(
-        params.database_name,
-        params.deployment_bucket,
-        deploymentPackageName,
-        params.api_gateway_name,
-        params.deployment_stage,
-        params.domain_name,
-        True,
+        databaseName=databaseName,
+        deploymentBucket=params.deployment_bucket,
+        packageName=deploymentPackageName,
+        apiGatewayName=apiGatewayName,
+        deploymentStage=params.deployment_stage,
+        domainName=domainName,
+        doFormat=True,
     )
     print("Writing CloudFormation template to " + templateName)
     with open(templateName, "w") as f:
@@ -392,9 +399,7 @@ def main(params):
     )
 
     # Run the CloudFormation stack creation process.
-    createStack(
-        params.region, params.deployment_bucket, params.stack_name, templateName
-    )
+    createStack(params.region, params.deployment_bucket, stackName, templateName)
 
     # Load the root capability set if specified.
     if params.capability_file == None:
@@ -414,13 +419,11 @@ def main(params):
         capabilitySet[configuration.API_KEY_DELETE_CAPABILITY_NAME] = {}
 
     # Load the root key to the key database.
-    rootKey = loadRootKey(params.region, params.database_name, capabilitySet)
+    rootKey = loadRootKey(params.region, databaseName, capabilitySet)
 
     # Derive and report the base URI to use when accessing the API.
-    apiBaseUrl = deriveApiBaseUrl(
-        params.region, params.stack_name, params.deployment_stage
-    )
-    publicBaseUrl = derivePublicBaseUrl(params.domain_name, params.deployment_stage)
+    apiBaseUrl = deriveApiBaseUrl(params.region, stackName, params.deployment_stage)
+    publicBaseUrl = derivePublicBaseUrl(domainName)
     print(
         "\n--------------------------------------------------------------------------------\n"
     )

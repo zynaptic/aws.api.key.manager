@@ -68,6 +68,11 @@ def parseCommandLine():
         default=configuration.AWS_CLOUD_FORMATION_DEFAULT_DNS_STACK_NAME,
         help="the name of the AWS CloudFormation stack to use",
     )
+    parser.add_argument(
+        "--deployment_stage",
+        default="testing",
+        help="the API deployment staging name to use",
+    )
     args = parser.parse_args()
     return args
 
@@ -78,7 +83,7 @@ def parseCommandLine():
 # ID for use when creating the TLS certificate.
 #
 def checkDnsRegistration(domainName):
-    with os.popen("aws route53 list-hosted-zones") as f:
+    with os.popen("aws route53 list-hosted-zones --no-paginate") as f:
         hostedZoneInfo = json.loads(f.read())
 
     # Perform a subdomain match to find a matching hosted zone.
@@ -181,21 +186,29 @@ def createStack(awsRegion, stackName, templateName):
 #
 def main(params):
 
+    # Prepend deployment stage name to domain name for non-production
+    # deployments.
+    if params.deployment_stage == "production":
+        domainName = params.domain_name
+    else:
+        domainName = params.deployment_stage + "." + params.domain_name
+    stackName = params.stack_name + "-" + params.deployment_stage
+
     # Perform pre-deployment checks.
-    dnsHostedZoneId = checkDnsRegistration(params.domain_name)
+    dnsHostedZoneId = checkDnsRegistration(domainName)
 
     # Create the CloudFormation template.
     resources = {}
-    resources.update(createApiCustomDomain(params.domain_name, dnsHostedZoneId))
+    resources.update(createApiCustomDomain(domainName, dnsHostedZoneId))
     templateData = {"Resources": resources}
     template = json.dumps(templateData, indent=4)
 
     # Create the CloudFormation stack.
-    templateName = params.stack_name + "-template.json"
+    templateName = stackName + "-template.json"
     print("Writing CloudFormation template to " + templateName)
     with open(templateName, "w") as f:
         f.write(template)
-    createStack(params.region, params.stack_name, templateName)
+    createStack(params.region, stackName, templateName)
 
 
 #
