@@ -182,7 +182,7 @@ public class ApiHandler implements RequestStreamHandler {
     try {
       apiAuthKeyCapabilitySet = futureApiAuthKeyCapabilitySet.get();
     } catch (Exception error) {
-      processError(HttpURLConnection.HTTP_UNAUTHORIZED, null, "API authorisation key access failed", outputStream);
+      processError(HttpURLConnection.HTTP_UNAVAILABLE, null, "API authorisation key access failed", outputStream);
       return;
     }
     if (apiAuthKeyCapabilitySet == null) {
@@ -358,6 +358,11 @@ public class ApiHandler implements RequestStreamHandler {
       if (authCapability != null) {
         ApiKeyCapability newCapability = authCapability.getCapabilityParser().parseCapability(newCapabilityName,
             newCapabilityData);
+        if (newCapability == null) {
+          processError(HttpURLConnection.HTTP_BAD_REQUEST, "POST, OPTIONS",
+              "Invalid API key capability set entry in POST request data body", outputStream);
+          return;
+        }
         newCapability.addCapabilityData(authCapability.getCapabilityData(), capabilityLock);
         newCapabilitySet.addCapability(newCapability);
       }
@@ -367,6 +372,11 @@ public class ApiHandler implements RequestStreamHandler {
       // using the default capability parser.
       else if (!capabilityLock) {
         ApiKeyCapability newCapability = defaultCapabilityParser.parseCapability(newCapabilityName, newCapabilityData);
+        if (newCapability == null) {
+          processError(HttpURLConnection.HTTP_BAD_REQUEST, "POST, OPTIONS",
+              "Invalid API key capability set entry in POST request data body", outputStream);
+          return;
+        }
         newCapabilitySet.addCapability(newCapability);
       }
     }

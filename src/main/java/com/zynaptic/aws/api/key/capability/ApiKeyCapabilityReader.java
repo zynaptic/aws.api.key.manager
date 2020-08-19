@@ -52,8 +52,8 @@ public class ApiKeyCapabilityReader {
    * 
    * @param dynamoDB This is the DynamoDB asynchronous interface to be used for
    *   database access.
-   * @param awsHostRegion This is the AWS host region where the API key table is
-   *   located.
+   * @param awsApiKeyTableName This is the name of the DynamoDB table that holds
+   *   the API key capability sets.
    */
   public ApiKeyCapabilityReader(AmazonDynamoDBAsync dynamoDB, String awsApiKeyTableName) {
     this.dynamoDB = dynamoDB;
