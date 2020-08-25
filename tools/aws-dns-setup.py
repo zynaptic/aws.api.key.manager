@@ -190,9 +190,10 @@ def main(params):
     # deployments.
     if params.deployment_stage == "production":
         domainName = params.domain_name
+        stackName = params.stack_name
     else:
         domainName = params.deployment_stage + "." + params.domain_name
-    stackName = params.stack_name + "-" + params.deployment_stage
+        stackName = params.stack_name + "-" + params.deployment_stage
 
     # Perform pre-deployment checks.
     dnsHostedZoneId = checkDnsRegistration(domainName)

@@ -346,14 +346,18 @@ def main(params):
     # Prepend deployment stage name to domain name for non-production
     # deployments.
     if params.deployment_stage == "production":
+        stackName = params.stack_name
+        databaseName = params.database_name
+        apiGatewayName = params.api_gateway_name
         domainName = params.domain_name
-    elif params.domain_name != None:
-        domainName = params.deployment_stage + "." + params.domain_name
     else:
-        domainName = None
-    stackName = params.stack_name + "-" + params.deployment_stage
-    databaseName = params.database_name + "-" + params.deployment_stage
-    apiGatewayName = params.api_gateway_name + "-" + params.deployment_stage
+        stackName = params.stack_name + "-" + params.deployment_stage
+        databaseName = params.database_name + "-" + params.deployment_stage
+        apiGatewayName = params.api_gateway_name + "-" + params.deployment_stage
+        if params.domain_name != None:
+            domainName = params.deployment_stage + "." + params.domain_name
+        else:
+            domainName = None
 
     # Perform pre-deployment checks.
     checkKeyDatabase(params.region, databaseName)
