@@ -118,7 +118,19 @@ public final class ApiKeyCapabilityReader {
     Map<String, AttributeValue> key = new HashMap<String, AttributeValue>(1);
     key.put("apiKey", new AttributeValue(apiKey));
     Future<GetItemResult> futureItemResult = dynamoDB.getItemAsync(awsApiKeyTableName, key);
-    return new ApiKeyCapabilityStatusFuture(apiKey, capabilityName, futureItemResult);
+    return new ApiKeyCapabilityStatusFuture(capabilityName, futureItemResult);
+  }
+
+  /*
+   * Gets the capability parser associated with the specified capability name, if
+   * present.
+   */
+  private ApiKeyCapabilityParser getCapabilityParser(String capabilityName) {
+    ApiKeyCapabilityParser capabilityParser = capabilityParsers.get(capabilityName);
+    if (capabilityParser == null) {
+      capabilityParser = defaultCapabilityParser;
+    }
+    return capabilityParser;
   }
 
   /*
@@ -157,14 +169,9 @@ public final class ApiKeyCapabilityReader {
       ApiKeyCapabilitySet capabilitySet = new ApiKeyCapabilitySet(apiKey, authorityKeys, expiryTimestamp, description);
       Map<String, AttributeValue> capabilityMap = attributeMap.get("capabilitySet").getM();
       for (Map.Entry<String, AttributeValue> capabilityMapEntry : capabilityMap.entrySet()) {
-        ApiKeyCapabilityParser capabilityParser = capabilityParsers.get(capabilityMapEntry.getKey());
+        ApiKeyCapabilityParser capabilityParser = getCapabilityParser(capabilityMapEntry.getKey());
         if (capabilityParser != null) {
-          ApiKeyCapability capability = capabilityParser.parseCapability(null, capabilityMapEntry.getValue());
-          if (capability != null) {
-            capabilitySet.addCapability(capability);
-          }
-        } else if (defaultCapabilityParser != null) {
-          ApiKeyCapability capability = defaultCapabilityParser.parseCapability(capabilityMapEntry.getKey(),
+          ApiKeyCapability capability = capabilityParser.parseCapability(capabilityMapEntry.getKey(),
               capabilityMapEntry.getValue());
           if (capability != null) {
             capabilitySet.addCapability(capability);
@@ -178,24 +185,39 @@ public final class ApiKeyCapabilityReader {
   }
 
   /*
-   * Process the asynchronous capability set access result, converting it into an
-   * API key capability status object.
+   * Process the asynchronous database access result, converting it into an API
+   * key capability status object.
    */
-  private ApiKeyCapabilityStatus processKeyCapabilityStatus(ApiKeyCapabilitySet capabilitySet, String capabilityName) {
+  private ApiKeyCapabilityStatus processKeyCapabilityStatus(String capabilityName, GetItemResult getItemResult) {
+    try {
+      Map<String, AttributeValue> attributeMap = getItemResult.getItem();
 
-    // Handle unknown or expired API keys.
-    if (capabilitySet == null) {
-      return new ApiKeyCapabilityStatus(capabilityName, null, "API authorisation key not found");
-    } else if (capabilitySet.grantExpired()) {
-      return new ApiKeyCapabilityStatus(capabilityName, null, "API authorisation key grant has expired");
-    } else if (!capabilitySet.hasCapability(capabilityName)) {
-      return new ApiKeyCapabilityStatus(capabilityName, null,
-          "API authorisation key does not have the required capability");
+      // Read the expiry timestamp. Throws exception if invalid.
+      long expiryTimestamp = Long.parseLong(attributeMap.get("expiryTimestamp").getN());
+      if (System.currentTimeMillis() > expiryTimestamp) {
+        return new ApiKeyCapabilityStatus(capabilityName, null, "API authorisation key grant has expired");
+      }
+
+      // Parse the named capability. Throws exception if invalid.
+      Map<String, AttributeValue> capabilityMap = attributeMap.get("capabilitySet").getM();
+      AttributeValue capabilityAttrs = capabilityMap.get(capabilityName);
+      ApiKeyCapabilityParser capabilityParser = getCapabilityParser(capabilityName);
+      if ((capabilityAttrs == null) || (capabilityParser == null)) {
+        return new ApiKeyCapabilityStatus(capabilityName, null,
+            "API authorisation key does not have the required capability");
+      }
+      ApiKeyCapability capability = capabilityParser.parseCapability(capabilityName, capabilityAttrs);
+
+      // Extract the capability data.
+      ObjectNode capabilityData = capability.getCapabilityJsonData();
+      return new ApiKeyCapabilityStatus(capabilityName, capabilityData, "API authorisation key is valid");
     }
 
-    // Extract the capability data.
-    ObjectNode capabilityData = capabilitySet.getCapability(capabilityName).getCapabilityJsonData();
-    return new ApiKeyCapabilityStatus(capabilityName, capabilityData, "API authorisation key is valid");
+    // All exceptions are taken to imply a missing or malformed API authorisation
+    // key.
+    catch (Exception error) {
+      return new ApiKeyCapabilityStatus(capabilityName, null, "API authorisation key not found");
+    }
   }
 
   /*
@@ -260,12 +282,10 @@ public final class ApiKeyCapabilityReader {
    * the DynamoDB data to an API key capability status object.
    */
   private final class ApiKeyCapabilityStatusFuture implements Future<ApiKeyCapabilityStatus> {
-    private final String apiKey;
     private final String capabilityName;
     private final Future<GetItemResult> futureItemResult;
 
-    private ApiKeyCapabilityStatusFuture(String apiKey, String capabilityName, Future<GetItemResult> futureItemResult) {
-      this.apiKey = apiKey;
+    private ApiKeyCapabilityStatusFuture(String capabilityName, Future<GetItemResult> futureItemResult) {
       this.capabilityName = capabilityName;
       this.futureItemResult = futureItemResult;
     }
@@ -300,8 +320,7 @@ public final class ApiKeyCapabilityReader {
     @Override
     public ApiKeyCapabilityStatus get() throws InterruptedException, ExecutionException {
       GetItemResult getItemResult = futureItemResult.get();
-      ApiKeyCapabilitySet capabilitySet = processKeyCapabilitySet(apiKey, getItemResult);
-      return processKeyCapabilityStatus(capabilitySet, capabilityName);
+      return processKeyCapabilityStatus(capabilityName, getItemResult);
     }
 
     /*
@@ -311,8 +330,7 @@ public final class ApiKeyCapabilityReader {
     public ApiKeyCapabilityStatus get(long timeout, TimeUnit unit)
         throws InterruptedException, ExecutionException, TimeoutException {
       GetItemResult getItemResult = futureItemResult.get(timeout, unit);
-      ApiKeyCapabilitySet capabilitySet = processKeyCapabilitySet(apiKey, getItemResult);
-      return processKeyCapabilityStatus(capabilitySet, capabilityName);
+      return processKeyCapabilityStatus(capabilityName, getItemResult);
     }
   }
 }
