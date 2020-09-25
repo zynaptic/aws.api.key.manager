@@ -359,9 +359,12 @@ def main(params):
         else:
             domainName = None
 
+    # Use dedicated regional deployment bucket.
+    deploymentBucket = params.deployment_bucket + "-" + params.region
+
     # Perform pre-deployment checks.
     checkKeyDatabase(params.region, databaseName)
-    checkDeploymentBucket(params.region, params.deployment_bucket)
+    checkDeploymentBucket(params.region, deploymentBucket)
     if domainName != None:
         checkDnsRegistration(params.region, domainName)
 
@@ -377,10 +380,7 @@ def main(params):
     deploymentPackageFile = jarFiles[0]
     deploymentPackageName = deploymentPackageFile.name
     uploadDeploymentFile(
-        params.region,
-        params.deployment_bucket,
-        deploymentPackageName,
-        deploymentPackageFile,
+        params.region, deploymentBucket, deploymentPackageName, deploymentPackageFile
     )
 
     # Create the CloudFormation template and upload it to the deployment
@@ -388,7 +388,7 @@ def main(params):
     templateName = stackName + "-template.json"
     template = cloudformation.createTemplate(
         databaseName=databaseName,
-        deploymentBucket=params.deployment_bucket,
+        deploymentBucket=deploymentBucket,
         packageName=deploymentPackageName,
         apiGatewayName=apiGatewayName,
         deploymentStage=params.deployment_stage,
@@ -398,12 +398,10 @@ def main(params):
     print("Writing CloudFormation template to " + templateName)
     with open(templateName, "w") as f:
         f.write(template)
-    uploadDeploymentFile(
-        params.region, params.deployment_bucket, templateName, templateName
-    )
+    uploadDeploymentFile(params.region, deploymentBucket, templateName, templateName)
 
     # Run the CloudFormation stack creation process.
-    createStack(params.region, params.deployment_bucket, stackName, templateName)
+    createStack(params.region, deploymentBucket, stackName, templateName)
 
     # Load the root capability set if specified.
     if params.capability_file == None:
