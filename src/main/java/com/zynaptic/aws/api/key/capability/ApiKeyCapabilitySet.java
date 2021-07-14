@@ -50,7 +50,7 @@ public class ApiKeyCapabilitySet {
    * @param authorityKey This is the chain of API authority keys that were
    *   originally used to create the API key and capability set.
    * @param expiryTimestamp This is the API key expiry time, expressed as an
-   *   integer number of milliseconds since the UNIX epoch.
+   *   integer number of seconds since the UNIX epoch.
    * @param description This is an optional text string which may be used to
    *   describe the intended use of the API key.
    */
@@ -96,7 +96,8 @@ public class ApiKeyCapabilitySet {
   /**
    * Accesses the expiry timestamp associated with the API key capability set.
    * 
-   * @return Returns the expiry timestanp for the capability set.
+   * @return Returns the expiry timestamp for the capability set, expressed as an
+   *   integer number of seconds since the UNIX epoch.
    */
   public long getExpiryTimestamp() {
     return expiryTimestamp;
@@ -120,7 +121,7 @@ public class ApiKeyCapabilitySet {
    *   grant has expired and 'false' otherwise.
    */
   public boolean grantExpired() {
-    return (System.currentTimeMillis() > expiryTimestamp);
+    return (System.currentTimeMillis() > (1000L * expiryTimestamp));
   }
 
   /**

@@ -172,7 +172,7 @@ public class ApiHandler implements RequestStreamHandler {
     Future<ApiKeyCapabilitySet> futureApiAuthKeyCapabilitySet = apiKeyCapabilityReader
         .getApiKeyCapabilitySet(apiAuthKey);
     Future<ApiKeyCapabilitySet> futureApiAccessKeyCapabilitySet = null;
-    if ((apiAccessKey != null) && (httpMethod.equals("GET"))) {
+    if ((apiAccessKey != null) && ((httpMethod.equals("GET") || httpMethod.equals("DELETE")))) {
       futureApiAccessKeyCapabilitySet = apiKeyCapabilityReader.getApiKeyCapabilitySet(apiAccessKey);
     }
 
@@ -238,7 +238,7 @@ public class ApiHandler implements RequestStreamHandler {
       } else if ((httpMethod.equals("GET")) && (readCapability != null)) {
         processReadRequest(apiAuthKeyCapabilitySet, futureApiAccessKeyCapabilitySet, authorisedMethods, outputStream);
       } else if ((httpMethod.equals("DELETE")) && (deleteCapability != null)) {
-        processDeleteRequest(apiAuthKeyCapabilitySet, apiAccessKey, authorisedMethods, outputStream);
+        processDeleteRequest(apiAuthKeyCapabilitySet, futureApiAccessKeyCapabilitySet, authorisedMethods, outputStream);
       } else {
         processError(HttpURLConnection.HTTP_BAD_METHOD, authorisedMethods, "Unsupported HTTP method: " + httpMethod,
             outputStream);
@@ -307,7 +307,7 @@ public class ApiHandler implements RequestStreamHandler {
     if (lifetimeNode == null) {
       expiryTimestamp = apiAuthKeyCapabilitySet.getExpiryTimestamp();
     } else if (lifetimeNode.canConvertToLong()) {
-      expiryTimestamp = System.currentTimeMillis() + (lifetimeNode.asLong() * 1000L);
+      expiryTimestamp = (System.currentTimeMillis() / 1000L) + lifetimeNode.asLong();
       if (expiryTimestamp > apiAuthKeyCapabilitySet.getExpiryTimestamp()) {
         expiryTimestamp = apiAuthKeyCapabilitySet.getExpiryTimestamp();
       }
@@ -433,10 +433,17 @@ public class ApiHandler implements RequestStreamHandler {
       return;
     }
 
+    // API keys are treated as being 'invisible' if accessed using the incorrect
+    // authority key.
+    if (!authoriseRequest(apiAuthKeyCapabilitySet, apiReadKeyCapabilitySet)) {
+      processError(HttpURLConnection.HTTP_NOT_FOUND, null, "API read key not found", outputStream);
+      return;
+    }
+
     // Format the expiry timestamp for the response message. Convert it to an ISO
     // date format for external use.
     DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
-    String expiryDate = formatter.format(Instant.ofEpochMilli(apiReadKeyCapabilitySet.getExpiryTimestamp()));
+    String expiryDate = formatter.format(Instant.ofEpochSecond(apiReadKeyCapabilitySet.getExpiryTimestamp()));
     JsonNodeFactory nodeFactory = JsonNodeFactory.instance;
     ObjectNode responseNode = nodeFactory.objectNode();
     responseNode.put("expiryDate", expiryDate);
@@ -470,22 +477,44 @@ public class ApiHandler implements RequestStreamHandler {
    * @param apiAuthKeyCapabilitySet This is the authorisation key capability set
    *   that is associated with the API authorisation key passed in the HTTP
    *   request header.
-   * @param apiAccessKey This is the API key for which the associated capability
-   *   set is to be removed from the API key database.
+   * @param futureApiDeleteKeyCapabilitySet This is the future API key capability
+   *   set that was returned as a result of the early dispatch of the asynchronous
+   *   read request.
    * @param authorisedMethods This is the set of HTTP methods that are authorised,
    *   given the capabilities held by the authorisation key.
    * @param outputStream This is the AWS Lambda function output stream to which
    *   the API response message should be written.
    */
-  private void processDeleteRequest(ApiKeyCapabilitySet apiAuthKeyCapabilitySet, String apiAccessKey,
-      String authorisedMethods, OutputStream outputStream) {
+  private void processDeleteRequest(ApiKeyCapabilitySet apiAuthKeyCapabilitySet,
+      Future<ApiKeyCapabilitySet> futureApiDeleteKeyCapabilitySet, String authorisedMethods,
+      OutputStream outputStream) {
 
     // TODO: If a key has the create capability we should do a full scan of the key
     // database and also delete any other keys that have it in their authority list.
 
+    // Get the capability set object associated with the API access key.
+    ApiKeyCapabilitySet apiDeleteKeyCapabilitySet;
+    try {
+      apiDeleteKeyCapabilitySet = futureApiDeleteKeyCapabilitySet.get();
+    } catch (Exception error) {
+      processError(HttpURLConnection.HTTP_NOT_FOUND, null, "API deleted key access failed", outputStream);
+      return;
+    }
+    if (apiDeleteKeyCapabilitySet == null) {
+      processError(HttpURLConnection.HTTP_NOT_FOUND, null, "API deleted key not found", outputStream);
+      return;
+    }
+
+    // API keys are treated as being 'invisible' if accessed using the incorrect
+    // authority key.
+    if (!authoriseRequest(apiAuthKeyCapabilitySet, apiDeleteKeyCapabilitySet)) {
+      processError(HttpURLConnection.HTTP_NOT_FOUND, null, "API deleted key not found", outputStream);
+      return;
+    }
+
     // Issue a delete request for the DynamoDB table entry.
     try {
-      if (!apiKeyCapabilityDeleter.deleteApiKeyCapabilitySet(apiAccessKey).get()) {
+      if (!apiKeyCapabilityDeleter.deleteApiKeyCapabilitySet(apiDeleteKeyCapabilitySet.getApiKey()).get()) {
         processError(HttpURLConnection.HTTP_INTERNAL_ERROR, "POST, OPTIONS",
             "Failed to delete API key from API key database", outputStream);
         return;
@@ -594,5 +623,40 @@ public class ApiHandler implements RequestStreamHandler {
     } catch (IOException error) {
       error.printStackTrace();
     }
+  }
+
+  /**
+   * Attempts to authorise an access request by checking that the authorisation
+   * key is in the set of authority keys held by the access key.
+   * 
+   * @param apiAuthKeyCapabilitySet This is the capability set associated with the
+   *   authority key that is being used.
+   * @param apiAccessKeyCapabilitySet This is the capability set associated with
+   *   the access key that is being checked against the authority key.
+   * @return Returns a boolean value which will be set to 'true' if the request is
+   *   authorised and 'false' otherwise.
+   */
+  private boolean authoriseRequest(ApiKeyCapabilitySet apiAuthKeyCapabilitySet,
+      ApiKeyCapabilitySet apiAccessKeyCapabilitySet) {
+
+    // Check whether an access request is being made under the key's own authority.
+    String apiAuthKey = apiAuthKeyCapabilitySet.getApiKey();
+    boolean authorised = false;
+    if (apiAuthKey.equals(apiAccessKeyCapabilitySet.getApiKey())) {
+      authorised = true;
+    }
+
+    // Get the authority keys for the read key capability set, and check that the
+    // authorising key is in the authority key list.
+    if (!authorised) {
+      List<String> authorityKeys = apiAccessKeyCapabilitySet.getAuthorityKeys();
+      for (String authorityKey : authorityKeys) {
+        if (apiAuthKey.equals(authorityKey)) {
+          authorised = true;
+          break;
+        }
+      }
+    }
+    return authorised;
   }
 }

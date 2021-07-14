@@ -249,7 +249,7 @@ def loadRootKey(awsRegion, databaseName, capabilitySet):
     rootKeyBytes = secrets.token_bytes(configuration.API_KEY_GENERATION_SIZE)
     rootKey = base64.urlsafe_b64encode(rootKeyBytes).decode("utf-8")
     expiryDate = datetime.datetime(9999, 12, 31, 0, 0)
-    expiryTimestamp = int(expiryDate.timestamp() * 1000)
+    expiryTimestamp = int(expiryDate.timestamp())
 
     # Format the table entry and then map to DynamoDB attributes.
     tableEntry = {

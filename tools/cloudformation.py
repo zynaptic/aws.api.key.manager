@@ -68,6 +68,10 @@ def createApiKeyCapabilityTable(databaseName):
                     {"AttributeName": "apiKey", "AttributeType": "S"}
                 ],
                 "KeySchema": [{"AttributeName": "apiKey", "KeyType": "HASH"}],
+                "TimeToLiveSpecification": {
+                    "Enabled": True,
+                    "AttributeName": "expiryTimestamp",
+                },
                 **billingMode,
                 **tableName,
             },
