@@ -194,7 +194,7 @@ public final class ApiKeyCapabilityReader {
 
       // Read the expiry timestamp. Throws exception if invalid.
       long expiryTimestamp = Long.parseLong(attributeMap.get("expiryTimestamp").getN());
-      if (System.currentTimeMillis() > expiryTimestamp) {
+      if (System.currentTimeMillis() > (1000L * expiryTimestamp)) {
         return new ApiKeyCapabilityStatus(capabilityName, null, "API authorisation key grant has expired");
       }
 
