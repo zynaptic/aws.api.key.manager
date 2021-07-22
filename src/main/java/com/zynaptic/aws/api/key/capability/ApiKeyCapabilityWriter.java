@@ -31,8 +31,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBAsync;
+import com.amazonaws.services.dynamodbv2.model.AttributeAction;
 import com.amazonaws.services.dynamodbv2.model.AttributeValue;
+import com.amazonaws.services.dynamodbv2.model.AttributeValueUpdate;
 import com.amazonaws.services.dynamodbv2.model.PutItemResult;
+import com.amazonaws.services.dynamodbv2.model.UpdateItemResult;
 
 /**
  * This class provides support for writing API key capability sets to the API
@@ -43,6 +46,7 @@ import com.amazonaws.services.dynamodbv2.model.PutItemResult;
 public class ApiKeyCapabilityWriter {
   private final AmazonDynamoDBAsync dynamoDB;
   private final String awsApiKeyTableName;
+  private final int awsApiKeyRetentionPeriod;
 
   /**
    * Creates a new API key capability writer instance using the specified DynamoDB
@@ -52,10 +56,13 @@ public class ApiKeyCapabilityWriter {
    *   database access.
    * @param awsApiKeyTableName This is the AWS DynamoDB table name that identifies
    *   the API key table.
+   * @param awsApiKeyRetentionPeriod This is the minimum delay after key expiry
+   *   before a key may be removed from the API key table.
    */
-  public ApiKeyCapabilityWriter(AmazonDynamoDBAsync dynamoDB, String awsApiKeyTableName) {
+  public ApiKeyCapabilityWriter(AmazonDynamoDBAsync dynamoDB, String awsApiKeyTableName, int awsApiKeyRetentionPeriod) {
     this.dynamoDB = dynamoDB;
     this.awsApiKeyTableName = awsApiKeyTableName;
+    this.awsApiKeyRetentionPeriod = awsApiKeyRetentionPeriod;
   }
 
   /**
@@ -68,12 +75,16 @@ public class ApiKeyCapabilityWriter {
    */
   public Future<Boolean> writeApiKeyCapabilitySet(ApiKeyCapabilitySet apiKeyCapabilitySet) {
 
+    // Derive the expiry and removal timestamps.
+    long expiryTimestamp = apiKeyCapabilitySet.getExpiryTimestamp();
+    long removalTimestamp = expiryTimestamp + awsApiKeyRetentionPeriod;
+
     // Construct the set of DynamoDB attribute values to be used in the write
     // operation.
     Map<String, AttributeValue> writeAttributes = new HashMap<String, AttributeValue>();
     writeAttributes.put("apiKey", new AttributeValue(apiKeyCapabilitySet.getApiKey()));
-    writeAttributes.put("expiryTimestamp",
-        new AttributeValue().withN(Long.toString(apiKeyCapabilitySet.getExpiryTimestamp())));
+    writeAttributes.put("expiryTimestamp", new AttributeValue().withN(Long.toString(expiryTimestamp)));
+    writeAttributes.put("removalTimestamp", new AttributeValue().withN(Long.toString(removalTimestamp)));
     if (apiKeyCapabilitySet.getDescription() != null) {
       writeAttributes.put("description", new AttributeValue(apiKeyCapabilitySet.getDescription()));
     }
@@ -98,9 +109,38 @@ public class ApiKeyCapabilityWriter {
     return new ApiKeyWriteStatusFuture(futureItemResult);
   }
 
+  /**
+   * Renews an API key capability set in the API key database by updating the
+   * expiry and removal timestamps.
+   * 
+   * @param apiKey This is the API key for which the expiry and removal timestamps
+   *   are to be updated.
+   * @return Returns a future boolean status value that indicates success or
+   *   failure.
+   */
+  public Future<Boolean> renewApiKeyCapabilitySet(String apiKey, long expiryTimestamp) {
+    long removalTimestamp = expiryTimestamp + awsApiKeyRetentionPeriod;
+
+    // Create the table key.
+    Map<String, AttributeValue> keyAttributes = new HashMap<String, AttributeValue>();
+    keyAttributes.put("apiKey", new AttributeValue(apiKey));
+
+    // Create the table entry update attributes.
+    Map<String, AttributeValueUpdate> updateAttributes = new HashMap<String, AttributeValueUpdate>();
+    updateAttributes.put("expiryTimestamp",
+        new AttributeValueUpdate(new AttributeValue().withN(Long.toString(expiryTimestamp)), AttributeAction.PUT));
+    updateAttributes.put("removalTimestamp",
+        new AttributeValueUpdate(new AttributeValue().withN(Long.toString(removalTimestamp)), AttributeAction.PUT));
+
+    // Initiate a DynamoDB update request.
+    Future<UpdateItemResult> futureItemResult = dynamoDB.updateItemAsync(awsApiKeyTableName, keyAttributes,
+        updateAttributes);
+    return new ApiKeyUpdateStatusFuture(futureItemResult);
+  }
+
   /*
-   * Wraps the DynamoDB future item result with the required code for converting
-   * the DynamoDB response to a boolean status value.
+   * Wraps the DynamoDB future item write result with the required code for
+   * converting the DynamoDB response to a boolean status value.
    */
   private final class ApiKeyWriteStatusFuture implements Future<Boolean> {
     private final Future<PutItemResult> futureItemResult;
@@ -156,6 +196,68 @@ public class ApiKeyCapabilityWriter {
      * status value.
      */
     private Boolean processPutItemResult(PutItemResult putItemResult) {
+      return true;
+    }
+  }
+
+  /*
+   * Wraps the DynamoDB future item update result with the required code for
+   * converting the DynamoDB response to a boolean status value.
+   */
+  private final class ApiKeyUpdateStatusFuture implements Future<Boolean> {
+    private final Future<UpdateItemResult> futureItemResult;
+
+    private ApiKeyUpdateStatusFuture(Future<UpdateItemResult> futureItemResult) {
+      this.futureItemResult = futureItemResult;
+    }
+
+    /*
+     * Delegate to the DynamoDB future item.
+     */
+    @Override
+    public boolean cancel(boolean mayInterruptIfRunning) {
+      return futureItemResult.cancel(mayInterruptIfRunning);
+    }
+
+    /*
+     * Delegate to the DynamoDB future item.
+     */
+    @Override
+    public boolean isCancelled() {
+      return futureItemResult.isCancelled();
+    }
+
+    /*
+     * Delegate to the DynamoDB future item.
+     */
+    @Override
+    public boolean isDone() {
+      return futureItemResult.isDone();
+    }
+
+    /*
+     * Wait on the DynamoDB future item and then process the result.
+     */
+    @Override
+    public Boolean get() throws InterruptedException, ExecutionException {
+      UpdateItemResult updateItemResult = futureItemResult.get();
+      return processUpdateItemResult(updateItemResult);
+    }
+
+    /*
+     * Wait on the DynamoDB future item and then process the result.
+     */
+    @Override
+    public Boolean get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+      UpdateItemResult updateItemResult = futureItemResult.get(timeout, unit);
+      return processUpdateItemResult(updateItemResult);
+    }
+
+    /*
+     * Process the asynchronous database access result, converting it into a boolean
+     * status value.
+     */
+    private Boolean processUpdateItemResult(UpdateItemResult updateItemResult) {
       return true;
     }
   }

@@ -90,6 +90,13 @@ RESOURCE_KEY_ACCESS_PATH = "/Keys/{apiKey}"
 API_KEY_GENERATION_SIZE = 30
 
 #
+# This option specifies the minimum delay between the expiry of an API
+# key and its removal from the API key table, expressed as an integer
+# number of seconds. The default value corresponds to 30 days.
+#
+AWS_API_KEY_RETENTION_PERIOD = 2592000
+
+#
 # This option specifies the name of the API key capability which should
 # be used to control key read access to the API.
 #
@@ -106,3 +113,9 @@ API_KEY_CREATE_CAPABILITY_NAME = "com.zynaptic.aws.api.key.create"
 # be used to control key deletion access to the API.
 #
 API_KEY_DELETE_CAPABILITY_NAME = "com.zynaptic.aws.api.key.delete"
+
+#
+# This option specifies the name of the API key capability which should
+# be used to control key renewal access to the API.
+#
+API_KEY_RENEWAL_CAPABILITY_NAME = "com.zynaptic.aws.api.key.renew"

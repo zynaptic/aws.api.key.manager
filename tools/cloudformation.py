@@ -70,7 +70,7 @@ def createApiKeyCapabilityTable(databaseName):
                 "KeySchema": [{"AttributeName": "apiKey", "KeyType": "HASH"}],
                 "TimeToLiveSpecification": {
                     "Enabled": True,
-                    "AttributeName": "expiryTimestamp",
+                    "AttributeName": "removalTimestamp",
                 },
                 **billingMode,
                 **tableName,
@@ -104,6 +104,7 @@ def createApiKeyManagementLambda(deploymentBucket, packageName):
                         "AWS_API_KEY_TABLE_NAME": {"Ref": "ApiKeyCapabilityTable"},
                         "AWS_API_RESOURCE_KEY_CREATE_PATH": configuration.RESOURCE_KEY_CREATE_PATH,
                         "AWS_API_RESOURCE_KEY_ACCESS_PATH": configuration.RESOURCE_KEY_ACCESS_PATH,
+                        "AWS_API_KEY_RETENTION_PERIOD": configuration.AWS_API_KEY_RETENTION_PERIOD,
                     }
                 },
             },
@@ -137,6 +138,7 @@ def createApiKeyManagementLambda(deploymentBucket, packageName):
                                         "dynamodb:PutItem",
                                         "dynamodb:GetItem",
                                         "dynamodb:DeleteItem",
+                                        "dynamodb:UpdateItem",
                                     ],
                                     "Resource": {
                                         "Fn::GetAtt": ["ApiKeyCapabilityTable", "Arn"]

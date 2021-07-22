@@ -81,7 +81,8 @@ public class ApiHandler implements RequestStreamHandler {
     AmazonDynamoDBAsync dynamoDB = AmazonDynamoDBAsyncClientBuilder.standard()
         .withRegion(apiConfiguration.getAwsHostRegion()).build();
     apiKeyCapabilityReader = new ApiKeyCapabilityReader(dynamoDB, apiConfiguration.getAwsApiKeyTableName());
-    apiKeyCapabilityWriter = new ApiKeyCapabilityWriter(dynamoDB, apiConfiguration.getAwsApiKeyTableName());
+    apiKeyCapabilityWriter = new ApiKeyCapabilityWriter(dynamoDB, apiConfiguration.getAwsApiKeyTableName(),
+        apiConfiguration.getAwsApiKeyRetentionPeriod());
     apiKeyCapabilityDeleter = new ApiKeyCapabilityDeleter(dynamoDB, apiConfiguration.getAwsApiKeyTableName());
     defaultCapabilityParser = new ApiKeyBasicCapabilityParser("DEFAULT");
 
@@ -172,7 +173,8 @@ public class ApiHandler implements RequestStreamHandler {
     Future<ApiKeyCapabilitySet> futureApiAuthKeyCapabilitySet = apiKeyCapabilityReader
         .getApiKeyCapabilitySet(apiAuthKey);
     Future<ApiKeyCapabilitySet> futureApiAccessKeyCapabilitySet = null;
-    if ((apiAccessKey != null) && ((httpMethod.equals("GET") || httpMethod.equals("DELETE")))) {
+    if ((apiAccessKey != null)
+        && ((httpMethod.equals("GET") || httpMethod.equals("DELETE") || httpMethod.equals("POST")))) {
       futureApiAccessKeyCapabilitySet = apiKeyCapabilityReader.getApiKeyCapabilitySet(apiAccessKey);
     }
 
@@ -217,28 +219,33 @@ public class ApiHandler implements RequestStreamHandler {
           .getCapability(apiConfiguration.getAwsApiKeyReadCapabilityName());
       ApiKeyCapability deleteCapability = apiAuthKeyCapabilitySet
           .getCapability(apiConfiguration.getAwsApiKeyDeleteCapabilityName());
+      ApiKeyCapability renewalCapability = apiAuthKeyCapabilitySet
+          .getCapability(apiConfiguration.getAwsApiKeyRenewalCapabilityName());
 
       // Indicate the authorised methods based on the available capabilities.
-      String authorisedMethods = null;
-      if ((readCapability != null) && (deleteCapability != null)) {
-        authorisedMethods = "GET, DELETE, OPTIONS";
-      } else if (readCapability != null) {
-        authorisedMethods = "GET, OPTIONS";
-      } else if (deleteCapability != null) {
-        authorisedMethods = "DELETE, OPTIONS";
+      List<String> authorisedMethodList = new ArrayList<String>(4);
+      if (readCapability != null) {
+        authorisedMethodList.add("GET");
       }
-      if (authorisedMethods == null) {
-        processError(HttpURLConnection.HTTP_UNAUTHORIZED, null, "Required API key access capability not found",
-            outputStream);
+      if (deleteCapability != null) {
+        authorisedMethodList.add("DELETE");
       }
+      if (renewalCapability != null) {
+        authorisedMethodList.add("POST");
+      }
+      authorisedMethodList.add("OPTIONS");
+      String authorisedMethods = String.join(", ", authorisedMethodList);
 
       // Handle the response for the authorised methods.
-      else if (httpMethod.equals("OPTIONS")) {
+      if (httpMethod.equals("OPTIONS")) {
         processSuccess(HttpURLConnection.HTTP_OK, authorisedMethods, null, outputStream);
       } else if ((httpMethod.equals("GET")) && (readCapability != null)) {
         processReadRequest(apiAuthKeyCapabilitySet, futureApiAccessKeyCapabilitySet, authorisedMethods, outputStream);
       } else if ((httpMethod.equals("DELETE")) && (deleteCapability != null)) {
         processDeleteRequest(apiAuthKeyCapabilitySet, futureApiAccessKeyCapabilitySet, authorisedMethods, outputStream);
+      } else if ((httpMethod.equals("POST")) && (renewalCapability != null)) {
+        processRenewalRequest(jsonRequest, apiAuthKeyCapabilitySet, futureApiAccessKeyCapabilitySet, authorisedMethods,
+            outputStream);
       } else {
         processError(HttpURLConnection.HTTP_BAD_METHOD, authorisedMethods, "Unsupported HTTP method: " + httpMethod,
             outputStream);
@@ -515,18 +522,121 @@ public class ApiHandler implements RequestStreamHandler {
     // Issue a delete request for the DynamoDB table entry.
     try {
       if (!apiKeyCapabilityDeleter.deleteApiKeyCapabilitySet(apiDeleteKeyCapabilitySet.getApiKey()).get()) {
-        processError(HttpURLConnection.HTTP_INTERNAL_ERROR, "POST, OPTIONS",
+        processError(HttpURLConnection.HTTP_INTERNAL_ERROR, authorisedMethods,
             "Failed to delete API key from API key database", outputStream);
         return;
       }
     } catch (Exception error) {
-      processError(HttpURLConnection.HTTP_INTERNAL_ERROR, "POST, OPTIONS",
+      processError(HttpURLConnection.HTTP_INTERNAL_ERROR, authorisedMethods,
           "Failed to delete API key from API key database", outputStream);
       return;
     }
 
     // Return the response message.
     String message = "{\"message\":\"Deleted API key\"}";
+    processSuccess(HttpURLConnection.HTTP_OK, authorisedMethods, message, outputStream);
+  }
+
+  /**
+   * Implements API key capability set renewal. This method is called when all
+   * prerequisites for renewing the API key capability set have been met by the
+   * outer API request handler.
+   * 
+   * @param jsonRequest This is the original API request forwarded by the AWS API
+   *   gateway.
+   * @param apiAuthKeyCapabilitySet This is the authorisation key capability set
+   *   that is associated with the API authorisation key passed in the HTTP
+   *   request header.
+   * @param futureApiRenewalKeyCapabilitySet This is the future API key capability
+   *   set that was returned as a result of the early dispatch of the asynchronous
+   *   read request.
+   * @param authorisedMethods This is the set of HTTP methods that are authorised,
+   *   given the capabilities held by the authorisation key.
+   * @param outputStream This is the AWS Lambda function output stream to which
+   *   the API response message should be written.
+   */
+  private void processRenewalRequest(JsonNode jsonRequest, ApiKeyCapabilitySet apiAuthKeyCapabilitySet,
+      Future<ApiKeyCapabilitySet> futureApiRenewalKeyCapabilitySet, String authorisedMethods,
+      OutputStream outputStream) {
+
+    // Get the capability set object associated with the API access key.
+    ApiKeyCapabilitySet apiRenewalKeyCapabilitySet;
+    try {
+      apiRenewalKeyCapabilitySet = futureApiRenewalKeyCapabilitySet.get();
+    } catch (Exception error) {
+      processError(HttpURLConnection.HTTP_NOT_FOUND, null, "API renewal key access failed", outputStream);
+      return;
+    }
+    if (apiRenewalKeyCapabilitySet == null) {
+      processError(HttpURLConnection.HTTP_NOT_FOUND, null, "API renewal key not found", outputStream);
+      return;
+    }
+
+    // API keys are treated as being 'invisible' if accessed using the incorrect
+    // authority key.
+    if (!authoriseRequest(apiAuthKeyCapabilitySet, apiRenewalKeyCapabilitySet)) {
+      processError(HttpURLConnection.HTTP_NOT_FOUND, null, "API renewal key not found", outputStream);
+      return;
+    }
+
+    // Extract the request body. This includes exception handling for invalid JSON
+    // in the request body.
+    JsonNode commandNode;
+    JsonNode bodyNode = jsonRequest.get("body");
+    if ((bodyNode != null) && (bodyNode.isTextual())) {
+      ObjectMapper objectMapper = new ObjectMapper();
+      JsonFactory jsonFactory = objectMapper.getFactory();
+      try {
+        JsonParser bodyParser = jsonFactory.createParser(bodyNode.asText());
+        commandNode = objectMapper.readTree(bodyParser);
+      } catch (Exception error) {
+        processError(HttpURLConnection.HTTP_BAD_REQUEST, authorisedMethods, "Invalid JSON in POST request data body",
+            outputStream);
+        return;
+      }
+    } else {
+      processError(HttpURLConnection.HTTP_BAD_REQUEST, authorisedMethods, "No POST request data body", outputStream);
+      return;
+    }
+
+    // Derive the key expiry parameter from the request body. Note that the lifetime
+    // of the created API key cannot exceed the lifetime of the authorising key.
+    if (!(commandNode.isObject())) {
+      processError(HttpURLConnection.HTTP_BAD_REQUEST, authorisedMethods, "Invalid JSON in POST request data body",
+          outputStream);
+      return;
+    }
+    JsonNode lifetimeNode = commandNode.get("lifetime");
+    long expiryTimestamp = 0;
+    if ((lifetimeNode != null) && (lifetimeNode.canConvertToLong())) {
+      expiryTimestamp = (System.currentTimeMillis() / 1000L) + lifetimeNode.asLong();
+      if (expiryTimestamp > apiAuthKeyCapabilitySet.getExpiryTimestamp()) {
+        expiryTimestamp = apiAuthKeyCapabilitySet.getExpiryTimestamp();
+      }
+    } else {
+      processError(HttpURLConnection.HTTP_BAD_REQUEST, authorisedMethods,
+          "Invalid API key lifetime value in POST request data body", outputStream);
+      return;
+    }
+
+    // Issue a renewal request for the DynamoDB table entry.
+    try {
+      if (!apiKeyCapabilityWriter.renewApiKeyCapabilitySet(apiRenewalKeyCapabilitySet.getApiKey(), expiryTimestamp)
+          .get()) {
+        processError(HttpURLConnection.HTTP_INTERNAL_ERROR, authorisedMethods,
+            "Failed to renew API key in API key database", outputStream);
+        return;
+      }
+    } catch (Exception error) {
+      processError(HttpURLConnection.HTTP_INTERNAL_ERROR, authorisedMethods,
+          "Failed to renew API key in API key database", outputStream);
+      return;
+    }
+
+    // Return the response message.
+    DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
+    String expiryDate = formatter.format(Instant.ofEpochSecond(expiryTimestamp));
+    String message = "{\"message\":\"Renewed API key until " + expiryDate + "\"}";
     processSuccess(HttpURLConnection.HTTP_OK, authorisedMethods, message, outputStream);
   }
 

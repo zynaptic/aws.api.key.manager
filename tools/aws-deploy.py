@@ -419,6 +419,8 @@ def main(params):
         capabilitySet[configuration.API_KEY_READ_CAPABILITY_NAME] = {}
     if configuration.API_KEY_DELETE_CAPABILITY_NAME not in capabilitySet:
         capabilitySet[configuration.API_KEY_DELETE_CAPABILITY_NAME] = {}
+    if configuration.API_KEY_RENEWAL_CAPABILITY_NAME not in capabilitySet:
+        capabilitySet[configuration.API_KEY_RENEWAL_CAPABILITY_NAME] = {}
 
     # Load the root key to the key database.
     rootKey = loadRootKey(params.region, databaseName, capabilitySet)

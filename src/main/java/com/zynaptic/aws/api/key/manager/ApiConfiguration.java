@@ -75,6 +75,13 @@ final class ApiConfiguration {
   private static final int AWS_API_KEY_SIZE = 30;
 
   /**
+   * This is a default option that specifies the minimum delay between the expiry
+   * of an API key and its removal from the API key table, expressed as an integer
+   * number of seconds. The default value corresponds to 30 days.
+   */
+  private static final int AWS_API_KEY_RETENTION_PERIOD = 2592000;
+
+  /**
    * This is a default option that specifies the name of the DynamoDB table that
    * is used for holding the API key table. The table is used to map API keys onto
    * API capabilities.
@@ -101,8 +108,15 @@ final class ApiConfiguration {
    */
   private static final String AWS_API_KEY_DELETE_CAPABILITY_NAME = "com.zynaptic.aws.api.key.delete";
 
+  /**
+   * This is a compile time configurable option that specifies the name of the API
+   * key capability which should be used to control key renewal access to the API.
+   */
+  private static final String AWS_API_KEY_RENEWAL_CAPABILITY_NAME = "com.zynaptic.aws.api.key.renew";
+
   // Specify the configuration options loaded from the execution environment.
   private final Regions awsHostRegion;
+  private final int awsApiKeyRetentionPeriod;
   private final String awsApiKeyTableName;
   private final String resourceCreatePath;
   private final String resourceAccessPath;
@@ -119,6 +133,21 @@ final class ApiConfiguration {
       awsHostRegion = Regions.fromName(env.get("AWS_REGION"));
     } else {
       awsHostRegion = AWS_DEFAULT_HOST_REGION;
+    }
+
+    // Use the API key retention period specified during deployment.
+    Integer requestedRetentionPeriod = null;
+    if (env.containsKey("AWS_API_KEY_RETENTION_PERIOD")) {
+      try {
+        requestedRetentionPeriod = Integer.valueOf(env.get("AWS_API_KEY_RETENTION_PERIOD"));
+      } catch (NumberFormatException error) {
+        // Reverts to the default value on error.
+      }
+    }
+    if (requestedRetentionPeriod != null) {
+      awsApiKeyRetentionPeriod = (requestedRetentionPeriod > 0) ? requestedRetentionPeriod : 0;
+    } else {
+      awsApiKeyRetentionPeriod = AWS_API_KEY_RETENTION_PERIOD;
     }
 
     // Use the DynamoDB table name generated during deployment.
@@ -205,6 +234,17 @@ final class ApiConfiguration {
   }
 
   /**
+   * Accesses the API key retention period to be used when performing periodic
+   * table cleanup operations.
+   * 
+   * @return Returns the minimum period for which an expired API key will be
+   *   retained in the key table.
+   */
+  int getAwsApiKeyRetentionPeriod() {
+    return awsApiKeyRetentionPeriod;
+  }
+
+  /**
    * Accesses the name of the AWS DynamoDB table that is used for mapping API keys
    * to API capabilities.
    * 
@@ -236,5 +276,13 @@ final class ApiConfiguration {
    */
   String getAwsApiKeyDeleteCapabilityName() {
     return AWS_API_KEY_DELETE_CAPABILITY_NAME;
+  }
+
+  /**
+   * Accesses the name of the capability that should be used for authorising key
+   * renewal operations. No data items for the capability are currently defined.
+   */
+  String getAwsApiKeyRenewalCapabilityName() {
+    return AWS_API_KEY_RENEWAL_CAPABILITY_NAME;
   }
 }
