@@ -48,38 +48,43 @@ API_KEY_TABLE_WRITE_CAPACITY_UNITS = 1
 # This option sets the default name of the AWS S3 deployment bucket that
 # will be used to store the AWS Lambda function deployment package.
 #
-AWS_S3_DEFAULT_DEPLOYMENT_BUCKET = "com-zynaptic-aws-octo-deployment"
+AWS_S3_DEFAULT_DEPLOYMENT_BUCKET = "com-zynaptic-aws-deployment"
 
 #
 # This option sets the default file name of the AWS Lambda function
-# deployment package.
+# deployment package. This will typically be replaced by the package
+# name generated during the Maven build process.
 #
 AWS_LAMBDA_DEFAULT_PACKAGE_NAME = "aws-api-key-manager-1.0.0.jar"
 
 #
-# This options sets the default name of the AWS CloudFormation stack.
+# This option sets the default name of the AWS CloudFormation stack.
 #
 AWS_CLOUD_FORMATION_DEFAULT_STACK_NAME = "aws-api-key-manager"
 
 #
-# This options sets the default name of the AWS CloudFormation DNS
+# This option sets the default name of the AWS CloudFormation DNS
 # configuration stack.
 #
 AWS_CLOUD_FORMATION_DEFAULT_DNS_STACK_NAME = "aws-api-dns-configuration"
 
 #
-# Specify the base resource path to be used when accessing this service
-# via a custom domain.
+# This option specifies the base resource path to be used when accessing
+# this service via a custom domain.
 #
 RESOURCE_CUSTOM_DOMAIN_BASE_PATH = "ApiKeyManager"
 
 #
 # This option sets the resource path that is used for API key creation.
+# It will be combined with the custom domain base path if required
+# to give an overall path such as /ApiKeyManager/Create
 #
 RESOURCE_KEY_CREATE_PATH = "/Create"
 
 #
 # This option sets the resource path that is used for API key accesses.
+# It will be combined with the custom domain base path if required
+# to give an overall path such as /ApiKeyManager/Keys/{apiKey}
 #
 RESOURCE_KEY_ACCESS_PATH = "/Keys/{apiKey}"
 
