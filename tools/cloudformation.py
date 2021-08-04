@@ -93,7 +93,7 @@ def createApiKeyManagementLambda(deploymentBucket, packageName):
             "Type": "AWS::Lambda::Function",
             "Properties": {
                 "Description": "API Key Management Service",
-                "Runtime": "java8",
+                "Runtime": "java8.al2",
                 "MemorySize": 256,
                 "Timeout": 30,
                 "Handler": "com.zynaptic.aws.api.key.manager.ApiHandler",
